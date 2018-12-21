@@ -18,10 +18,11 @@ struct RemoveCardAction {
 
 
 fn main() {
-
     let api = HidApi::new().unwrap();
 
-    let (vid, pid) = (5824, 1158);
+    // TODO: Reserve PID (http://pid.codes/1209/)
+    let (vid, pid) = (0x1209, 0x4AD1);
+
     // Find the specific device's first interface (In our case this is the RawHID interface)
     match api.devices().iter().find(|d| d.vendor_id == vid && d.product_id == pid && d.interface_number == 0) {
         Some(device) => {
