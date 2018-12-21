@@ -1,24 +1,3 @@
-/*
- * Pins on ICODE2 Reader Writer:
- *
- *   ICODE2   |     PN5180
- * pin  label | pin  I/O  name
- * 1    +5V
- * 2    +3,3V
- * 3    RST     10   I    RESET_N (low active)
- * 4    NSS     1    I    SPI NSS
- * 5    MOSI    3    I    SPI MOSI
- * 6    MISO    5    O    SPI MISO
- * 7    SCK     7    I    SPI Clock
- * 8    BUSY    8    O    Busy Signal
- * 9    GND     9  Supply VSS - Ground
- * 10   GPIO    38   O    GPO1 - Control for external DC/DC
- * 11   IRQ     39   O    IRQ
- * 12   AUX     40   O    AUX1 - Analog/Digital test signal
- * 13   REQ     2?  I/O   AUX2 - Analog test bus or download
- *
- */
- 
 #include <PN5180.h>
 #include <PN5180ISO15693.h>
 
@@ -101,11 +80,11 @@ void loop() {
   byte buffer[64];
   n = RawHID.recv(buffer, 0); // 0 timeout = do not wait
   if (n > 0) {
-    //Keyboard.press(KEYPAD_PLUS);
+    Keyboard.press(KEYPAD_PLUS);
     delay(20);
-    //Keyboard.release(KEYPAD_PLUS);
+    Keyboard.release(KEYPAD_PLUS);
   }
-  
+
   if (errorFlag) {
     uint32_t irqStatus = nfc.getIRQStatus();
     showIRQStatus(irqStatus);
@@ -200,7 +179,7 @@ void insertCardAction(uint8_t uid[8]) {
     Serial.print(hex);
   }
   Serial.println();
-  
+
   // rest of the bytes are zeroed
   for (int i=9; i<63; i++) {
     data[i] = 0;

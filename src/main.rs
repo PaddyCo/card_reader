@@ -1,7 +1,10 @@
+extern crate hidapi;
+
 use std::thread;
 use std::time;
 use std::fs::File;
 use std::io::prelude::*;
+use std::io;
 use hidapi::HidApi;
 
 struct InsertCardAction {
@@ -15,19 +18,27 @@ struct RemoveCardAction {
 
 
 fn main() {
-    extern crate hidapi;
 
     let api = HidApi::new().unwrap();
 
-    for device in api.devices() {
-        println!("{:#?}", device);
+    let (vid, pid) = (5824, 1158);
+    // Find the specific device's first interface (In our case this is the RawHID interface)
+    match api.devices().iter().find(|d| d.vendor_id == vid && d.product_id == pid && d.interface_number == 0) {
+        Some(device) => {
+            open_device(&api, device);
+        },
+        None => {
+            eprintln!("Could not find compatible device.");
+            thread::sleep(time::Duration::from_millis(1000));
+        }
     }
+}
 
+fn open_device(api: &hidapi::HidApi, device_info: &hidapi::HidDeviceInfo) {
     loop {
         // Connect to device using its VID and PID
         println!("Attempting to connect to device...");
-        let (vid, pid) = (5824, 1158);
-        match api.open(vid, pid) {
+        match device_info.open_device(&api) {
             Ok(device) => {
                 println!("Device connected!");
                 match device.get_manufacturer_string() {
@@ -38,7 +49,7 @@ fn main() {
                     Ok(product) => println!("Product: {}", product.unwrap()),
                     _ => {}
                 }
-                device_poll(device);
+                device_poll(&device);
             },
             Err(e) => {
                 eprintln!("Error: {}", e);
@@ -48,7 +59,7 @@ fn main() {
     }
 }
 
-fn device_poll(device: hidapi::HidDevice) {
+fn device_poll(device: &hidapi::HidDevice) {
     loop {
         println!("Waiting for data...");
 
@@ -64,9 +75,27 @@ fn device_poll(device: hidapi::HidDevice) {
 
 
                 match buf[2] {
-                    0x01 => insert_card(InsertCardAction { player_number: buf[3], card_id: [buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[10], buf[11]] }, &device),
-                    0x02 => remove_card(RemoveCardAction { player_number: buf[3] }),
-                       _ => println!("Unknown action, ignoring.")
+                    0x01 => {
+                        match insert_card(InsertCardAction { player_number: buf[3], card_id: [buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[10], buf[11]] }) {
+                            Ok(_card_id) => {
+                                trigger_card_read(&device);
+                            },
+                            Err(e) => {
+                                eprintln!("IO Error: {}", e);
+                                thread::sleep(time::Duration::from_millis(1000));
+                            }
+                        };
+                    },
+                    0x02 => {
+                        match remove_card(RemoveCardAction { player_number: buf[3] }) {
+                            Ok(_card_id) => {},
+                            Err(e) => {
+                                eprintln!("IO Error: {}", e);
+                                thread::sleep(time::Duration::from_millis(1000));
+                            }
+                        };
+                    },
+                    _ => { println!("Unknown action, ignoring."); },
                 }
             },
             Err(e) => {
@@ -77,16 +106,40 @@ fn device_poll(device: hidapi::HidDevice) {
     }
 }
 
-fn insert_card(action: InsertCardAction, device: &hidapi::HidDevice) {
+fn insert_card(action: InsertCardAction) -> Result<String, io::Error> {
     println!("Card inserted into reader #{}: {:02X?}", action.player_number, action.card_id);
-    // Write to file
-    let mut file = File::create("card.txt").unwrap();
+    // Create/Open file
+    let mut file = File::create("card.txt")?;
+
+    // Build card id string
+    let mut card_id = String::new();
     for i in 0..action.card_id.len() {
-        file.write_fmt(format_args!("{:02X}", action.card_id[i]));
+        card_id.push_str(&format!("{:02X}", action.card_id[i]));
     }
-    device.write(&[0; 8]);
+
+    // Write to file
+    match file.write(card_id.as_bytes()) {
+        Ok(_result) => {},
+        Err(e) => {
+            eprintln!("Error writing card.txt: {}", e);
+            return Err(e);
+        }
+    }
+
+    return Ok(card_id);
 }
 
-fn remove_card(action: RemoveCardAction) {
+fn remove_card(action: RemoveCardAction) -> Result<String, io::Error> {
     println!("Card removed from reader #{}", action.player_number);
+    return Ok(String::new());
+}
+
+fn trigger_card_read(device: &hidapi::HidDevice) {
+    // Write to device (Tell it to push the "Card Insert" keyboard key)
+    match device.write(&[0; 8]) {
+        Ok(_result) => {},
+        Err(e) => {
+            eprintln!("Error sending Card Insert signal to device: {}", e);
+        }
+    }
 }
